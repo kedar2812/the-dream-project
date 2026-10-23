@@ -1,26 +1,602 @@
 @import "tailwindcss";
 
+/* Brand palette, taken from @thedreamproject.life: brushed gold on black,
+   and ivory stone. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --black: #0b0a08;
+  --bronze: #4a3510;
+  --gold: #c9a24a;
+  --gold-hi: #f1d58a;
+  --gold-deep: #6b4e12;
+  --ivory: #f2ebdd;
+  --ink: #1a160f;
+  --ink-muted: #6b5f4b;
+  --night-muted: rgb(242 235 221 / 0.64);
+  --brushed: linear-gradient(180deg, #cda54a 0%, #9c7424 45%, #5e440f 72%, #a9832f 100%);
+  --brushed-light: linear-gradient(180deg, #f6e3a6 0%, #c9a24a 55%, #8a6a1f 100%);
+  --gutter: clamp(16px, 4vw, 48px);
+  --spring: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: dark;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  background: var(--black);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 100%;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--gold);
+  color: var(--black);
+}
+
+.experience {
+  --fg: var(--ivory);
+  --muted: var(--night-muted);
+  color: var(--fg);
+  min-height: 100svh;
+}
+
+.experience[data-phase="awake"] {
+  --fg: var(--ink);
+  --muted: var(--ink-muted);
+}
+
+.experience[data-phase="dream"] {
+  height: 100svh;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* The shader canvas. The gradient is what shows if WebGL is unavailable. */
+.field {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background:
+    radial-gradient(55% 45% at 35% 40%, rgb(201 162 74 / 0.35), transparent 70%),
+    radial-gradient(45% 40% at 70% 70%, rgb(74 53 16 / 0.6), transparent 70%),
+    var(--black);
+}
+
+/* ---------- Top bar ---------- */
+
+.bar {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: max(18px, env(safe-area-inset-top)) var(--gutter) 0;
+  pointer-events: none;
+}
+
+.bar > * {
+  pointer-events: auto;
+}
+
+.logo {
+  display: block;
+  width: auto;
+  height: clamp(36px, 5vw, 48px);
+  filter: drop-shadow(0 4px 14px rgb(0 0 0 / 0.35));
+  transition: filter 1.2s var(--spring);
+}
+
+[data-phase="awake"] .logo {
+  filter: none;
+}
+
+.bar__tools {
+  display: flex;
+  gap: 8px;
+}
+
+/* Translucent material chips: light catches the top edge. */
+.chip {
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--fg);
+  padding: 0.5rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid rgb(201 162 74 / 0.28);
+  border-top-color: rgb(241 213 138 / 0.45);
+  background: rgb(11 10 8 / 0.35);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  cursor: pointer;
+  transition:
+    transform 100ms ease-out,
+    background-color 0.6s var(--spring),
+    color 1.2s var(--spring),
+    border-color 1.2s var(--spring);
+}
+
+.chip:active {
+  transform: scale(0.96);
+}
+
+[data-phase="awake"] .chip {
+  border-color: rgb(107 78 18 / 0.25);
+  border-top-color: rgb(255 255 255 / 0.9);
+  background: rgb(255 255 255 / 0.45);
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold-deep);
+  outline-offset: 3px;
+}
+
+[data-phase="dream"] :focus-visible {
+  outline-color: var(--gold-hi);
+}
+
+/* ---------- Dream ---------- */
+
+.hold {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hold:focus-visible {
+  outline: none;
+}
+
+.ring {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 11;
+  width: 88px;
+  height: 88px;
+  margin: -44px 0 0 -44px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: transform 140ms ease-out;
+}
+
+.ring.is-pressed {
+  transform: scale(1);
+}
+
+.ring svg {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+  overflow: visible;
+  filter: drop-shadow(0 0 6px rgb(241 213 138 / 0.55));
+}
+
+.ring circle {
+  fill: none;
+  stroke-width: 1.5;
+}
+
+.ring__track {
+  stroke: rgb(201 162 74 / 0.35);
+  fill: rgb(11 10 8 / 0.45) !important;
+}
+
+.ring__arc {
+  stroke: var(--gold-hi);
+  stroke-width: 2.5 !important;
+  stroke-linecap: round;
+}
+
+.ring__mark {
+  position: relative;
+  font-family: var(--font-display), sans-serif;
+  font-weight: 700;
+  font-size: 1.625rem;
+  letter-spacing: 0.02em;
+  background: var(--brushed-light);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.whisper {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: calc(50% + min(26vw, 23vh) + 20px);
+  z-index: 12;
+  margin: 0;
+  padding: 0 var(--gutter);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.2em 0.9em;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(1.25rem, 2.4vw, 1.875rem);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gold-hi);
+  pointer-events: none;
+}
+
+.whisper span {
+  opacity: 0;
+  filter: blur(10px);
+  transform: translateY(10px);
+  transition:
+    opacity 0.5s var(--spring),
+    filter 0.5s var(--spring),
+    transform 0.5s var(--spring);
+}
+
+.whisper span.is-on {
+  opacity: 1;
+  filter: blur(0);
+  transform: none;
+}
+
+.hint,
+.skip {
+  position: fixed;
+  z-index: 12;
+  bottom: max(32px, calc(env(safe-area-inset-bottom) + 20px));
+  margin: 0;
+  color: var(--muted);
+}
+
+/* Small caps text gets open tracking, as in the brand's post captions. */
+.hint {
+  left: 0;
+  right: 0;
+  text-align: center;
+  pointer-events: none;
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--gold-hi);
+  opacity: 0.85;
+}
+
+.skip {
+  right: var(--gutter);
+  font: inherit;
+  font-size: 0.875rem;
+  background: none;
+  border: 0;
+  padding: 8px 0;
+  text-decoration: underline;
+  text-decoration-color: rgb(201 162 74 / 0.45);
+  text-underline-offset: 4px;
+  cursor: pointer;
+  opacity: 0;
+  animation: appear 0.8s var(--spring) 4s forwards;
+}
+
+.skip:hover {
+  color: var(--ivory);
+}
+
+@keyframes appear {
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .hint {
+    bottom: max(64px, calc(env(safe-area-inset-bottom) + 52px));
+  }
+  .skip {
+    left: 0;
+    right: 0;
+    text-align: center;
+    bottom: max(20px, calc(env(safe-area-inset-bottom) + 8px));
+  }
+}
+
+/* ---------- Awake ---------- */
+
+.wake {
+  position: relative;
+  z-index: 10;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 112px var(--gutter) max(clamp(28px, 6vh, 64px), env(safe-area-inset-bottom));
+  color: var(--ink);
+}
+
+.wake__grid {
+  display: grid;
+  gap: clamp(40px, 6vh, 64px);
+  align-items: end;
+}
+
+@media (min-width: 980px) {
+  .wake__grid {
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    gap: 64px;
+  }
+}
+
+/* Display: the brand's tall condensed caps in brushed gold. */
+.stack {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(3.5rem, min(11vw, 14svh), 10.5rem);
+  line-height: 0.92;
+  letter-spacing: 0;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.stack__line {
+  display: block;
+  width: fit-content;
+  padding-bottom: 0.02em;
+  background: var(--brushed);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.stack__open {
+  white-space: nowrap;
+}
+
+.autosize {
+  display: inline-grid;
+  min-width: 1.6em;
+  vertical-align: baseline;
+  border-bottom: 0.05em solid var(--gold);
+  cursor: text;
+}
+
+.autosize::after,
+.autosize input {
+  grid-area: 1 / 1;
+  font: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  text-transform: uppercase;
+  padding: 0 0.03em;
+}
+
+.autosize::after {
+  content: attr(data-value) " ";
+  visibility: hidden;
+  white-space: pre;
+}
+
+.autosize input {
+  width: 100%;
+  min-width: 0;
+  height: 0.92em;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  -webkit-text-fill-color: var(--ink);
+  caret-color: var(--gold);
+  outline: none;
+}
+
+.autosize:focus-within {
+  border-bottom-color: var(--ink);
+}
+
+.prompt {
+  margin: 1.25rem 0 0;
+  font-size: 1.0625rem;
+  color: var(--ink-muted);
+}
+
+.panel {
+  max-width: 27rem;
+}
+
+.decision {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(1.625rem, 2.4vw, 2.125rem);
+  font-weight: 600;
+  line-height: 1.05;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+}
+
+.lede {
+  margin: 0 0 1.75rem;
+  font-size: 1.125rem;
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+
+.join__label {
+  display: block;
+  margin-bottom: 0.6rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.join__row {
+  display: flex;
+  gap: 8px;
+}
+
+.join__row input {
+  flex: 1;
+  min-width: 0;
+  height: 52px;
+  padding: 0 16px;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--ink);
+  border-radius: 12px;
+  border: 1px solid rgb(26 22 15 / 0.18);
+  background: rgb(255 255 255 / 0.55);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  transition: border-color 0.2s ease;
+}
+
+.join__row input::placeholder {
+  color: rgb(107 95 75 / 0.75);
+}
+
+.join__row input:focus-visible {
+  outline: none;
+  border-color: var(--gold-deep);
+  box-shadow: 0 0 0 3px rgb(201 162 74 / 0.3);
+}
+
+.join__row input[aria-invalid="true"] {
+  border-color: #9b2c1f;
+}
+
+.join__row button {
+  height: 52px;
+  padding: 0 22px;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--gold-hi);
+  background: var(--black);
+  border: 1px solid var(--bronze);
+  border-radius: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    transform 100ms ease-out,
+    background-color 0.2s ease;
+}
+
+.join__row button:hover {
+  background: #221c12;
+}
+
+.join__row button:active {
+  transform: scale(0.97);
+}
+
+.join__row button:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.join__error {
+  min-height: 1.4em;
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  color: #9b2c1f;
+}
+
+@media (max-width: 480px) {
+  .join__row {
+    flex-direction: column;
+  }
+  .join__row input {
+    flex: none;
+  }
+}
+
+.done h2 {
+  margin: 0 0 0.4rem;
+  font-family: var(--font-display), sans-serif;
+  font-size: 2rem;
+  line-height: 1.05;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.done p {
+  margin: 0;
+  font-size: 1.0625rem;
+  color: var(--ink-muted);
+}
+
+.follow {
+  display: inline-flex;
+  flex-direction: column;
+  margin-top: 1.75rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.follow span {
+  color: var(--gold-deep);
+  text-decoration: underline;
+  text-decoration-color: rgb(107 78 18 / 0.35);
+  text-underline-offset: 4px;
+}
+
+.follow:hover span {
+  text-decoration-color: var(--gold-deep);
+}
+
+/* ---------- Accessibility preferences ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .whisper span {
+    filter: none;
+    transform: none;
+    transition: opacity 0.3s ease;
+  }
+  .ring {
+    transition: none;
+    transform: none;
+  }
+  .skip {
+    animation-duration: 0.01s;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .chip {
+    background: var(--black);
+    backdrop-filter: none;
+  }
+  [data-phase="awake"] .chip,
+  .join__row input {
+    background: #fff;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --night-muted: var(--ivory);
+    --ink-muted: var(--ink);
+    --brushed: linear-gradient(var(--gold-deep), var(--gold-deep));
+  }
+  .chip,
+  .join__row input {
+    border-color: currentColor;
+  }
 }
