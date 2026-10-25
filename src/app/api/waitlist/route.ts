@@ -1,21 +1,12 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-
-type Entry = { email: string; word: string; joinedAt: string };
+import { createHash } from "node:crypto";
+import { put } from "@vercel/blob";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-// Local file storage for development. Swap this for a real store (database or
-// email platform) before deploying; serverless file systems are read-only.
-const FILE = path.join(process.cwd(), "data", "waitlist.json");
 
-async function load(): Promise<Entry[]> {
-  try {
-    return JSON.parse(await readFile(FILE, "utf8"));
-  } catch {
-    return [];
-  }
-}
-
+// Each sign-up is one private file in the Vercel Blob store, named by a hash
+// of the email. Concurrent sign-ups never overwrite each other, and signing up
+// again just updates that person's entry. Browse them in the Vercel dashboard
+// under Storage → dream-waitlist.
 export async function POST(request: Request) {
   let body: { email?: unknown; word?: unknown };
   try {
@@ -30,15 +21,17 @@ export async function POST(request: Request) {
   }
   const word = typeof body.word === "string" ? body.word.trim().slice(0, 24) : "";
 
-  const list = await load();
-  const existing = list.find((entry) => entry.email === email);
-  if (existing) {
-    if (word) existing.word = word;
-  } else {
-    list.push({ email, word, joinedAt: new Date().toISOString() });
+  const id = createHash("sha256").update(email).digest("hex").slice(0, 32);
+  try {
+    await put(
+      `waitlist/${id}.json`,
+      JSON.stringify({ email, word, submittedAt: new Date().toISOString() }),
+      { access: "private", contentType: "application/json", addRandomSuffix: false, allowOverwrite: true },
+    );
+  } catch (error) {
+    console.error("Waitlist save failed", error);
+    return Response.json({ error: "Your place wasn't saved. Try again in a moment." }, { status: 500 });
   }
 
-  await mkdir(path.dirname(FILE), { recursive: true });
-  await writeFile(FILE, JSON.stringify(list, null, 2));
   return Response.json({ ok: true });
 }
